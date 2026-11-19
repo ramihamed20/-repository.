@@ -10,4 +10,5 @@
 <path d="M256 154 C270 168 286 176 311 175" stroke="#b5d4e6" stroke-width="11" fill="none" stroke-linecap="round" opacity=".7"/>
 <path d="M180 210 Q181 180 205 178" fill="none" stroke="#b7e7f2" stroke-width="13" stroke-linecap="round" opacity=".72"/>
 <path d="M385 320v16M377 328h16" stroke="#56dfdf" stroke-width="6" stroke-linecap="round"/>
+<!-- PWA icon source -->
 </svg>
