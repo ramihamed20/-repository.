@@ -1,0 +1,41 @@
+name: Verify Dental Resources API
+on:
+  push:
+    paths:
+      - '.github/workflows/test-supabase-api.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test shared anonymous read and submission
+        env:
+          SB_URL: https://fhajvzpiaqzyefcmhrjr.supabase.co
+          SB_KEY: sb_publishable_1Z-1e4gpnbrq0MeeP4MkxA_QWj0i6tt
+        run: |
+          node <<'JS'
+          (async()=>{
+            const base=process.env.SB_URL+'/rest/v1/study_resources';
+            const key=process.env.SB_KEY;
+            const id='smoketest_'+process.env.GITHUB_RUN_ID;
+            const headers={apikey:key};
+            const list=await fetch(base+'?select=*&limit=1',{headers});
+            if(list.status!==200)throw Error('GET failed '+list.status+' '+await list.text());
+            const rows=await list.json();
+            if(!Array.isArray(rows))throw Error('GET response not an array');
+            const record={id,context:'dentistry-2',subject:'catalog-dentistry-2-DS222',type:'summary',title:'API smoke test',description:'Temporary automated integration verification',url:'https://t.me/example_smoke_'+id};
+            const post=await fetch(base,{method:'POST',headers:{...headers,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify(record)});
+            if(post.status!==201)throw Error('POST failed '+post.status+' '+await post.text());
+            const inserted=await post.json();
+            if(inserted[0]?.id!==id)throw Error('POST did not return inserted row');
+            const get=await fetch(base+'?id=eq.'+id+'&select=id,title',{headers});
+            if(get.status!==200)throw Error('Readback failed '+get.status+' '+await get.text());
+            const result=await get.json();
+            if(result[0]?.id!==id)throw Error('Inserted resource not publicly visible');
+            const patch=await fetch(base+'?id=eq.'+id,{method:'PATCH',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({title:'Not allowed'})});
+            if(patch.status<400)throw Error('Unauthorized public PATCH succeeded: '+patch.status);
+            console.log('PASS: public GET, shared POST/readback, update denied, record '+id);
+          })().catch(e=>{console.error(e);process.exit(1)});
+          JS
