@@ -2,8 +2,16 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#ffffff">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#183960">
+<meta name="application-name" content="دليلك الدراسي">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="دليلك الدراسي">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png">
 <title>دليلك الدراسي | مستودع روابط الطلبة</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;600;700;800;900&display=swap');
@@ -66,6 +74,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 
 
 @media(max-width:520px){.channel{padding:14px}.channel-actions{position:static;margin-top:12px;text-align:left}.channel-body{align-items:flex-start}.avatar{height:54px;width:54px}}
+@media (display-mode:standalone){body{padding-top:env(safe-area-inset-top);}}
 </style>
 </head>
 <body>
@@ -162,6 +171,13 @@ function nav(view){state.view=view;state.search='';state.filter='all';if(view===
 document.addEventListener('click',e=>{const target=e.target.closest('[data-action],[data-program],[data-year],[data-subject],[data-sheet],[data-filter],[data-nav],[data-link]');if(!target)return;let ds=target.dataset;if(ds.link==='home'){e.preventDefault();nav('home')}if(ds.program){state.program=ds.program;state.year=2;nav('home')}if(ds.year){state.year=Number(ds.year);nav('year')}if(ds.subject){state.subject=ds.subject;nav('subject')}if(ds.sheet){state.sheet=ds.sheet;nav('sheet')}if(ds.filter){state.filter=ds.filter;render()}if(ds.nav)nav(ds.nav);if(ds.action==='close')closeModal();if(ds.action==='add-channel')openModal('channel');if(ds.action==='add-subject')openModal('subject');if(ds.action==='add-sheet')openModal('sheet');if(ds.action==='add-resource')openModal('resource');if(ds.action==='add-any'){if(state.view==='home'){toast('اختر السنة أولًا لإضافة قناة أو مصدر');return}openModal(state.view==='year'?'channel':'resource')}if(ds.action==='search'){document.querySelector('#search')?.focus()}if(ds.action==='go-channels'){if(state.view==='home'){state.view='year';state.search='';state.filter='all';render()}else if(state.view!=='year'){state.view='year';state.search='';state.filter='all';render()}document.querySelector('#channels')?.scrollIntoView({behavior:'smooth',block:'start'})}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});render();
 })();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', {scope: './'}).catch(error => console.warn('PWA offline cache unavailable:', error));
+  });
+}
 </script>
 </body>
 </html>
