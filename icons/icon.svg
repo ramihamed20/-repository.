@@ -1,14 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Dento icon">
 <defs>
- <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#214b89"/><stop offset="1" stop-color="#102a4a"/></linearGradient>
- <linearGradient id="tooth" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#e9f9ff"/></linearGradient>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#164d93"/><stop offset=".55" stop-color="#091e4d"/><stop offset="1" stop-color="#1231a5"/></linearGradient>
+ <linearGradient id="aqua" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#64f7ea"/><stop offset="1" stop-color="#00cadb"/></linearGradient>
+ <linearGradient id="white" x1="0" y1="0" x2=".5" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#e9f6ff"/></linearGradient>
 </defs>
-<rect width="512" height="512" rx="112" fill="url(#bg)"/>
-<circle cx="403" cy="104" r="64" fill="#3164a0" opacity=".45"/>
-<circle cx="103" cy="433" r="85" fill="#36b3c9" opacity=".15"/>
-<path d="M256 154 C216 129 155 137 145 195 C135 251 153 275 183 319 C196 339 193 383 213 392 C238 402 240 330 256 330 C273 330 274 403 300 392 C322 384 315 343 329 319 C358 276 378 251 367 195 C357 137 296 129 256 154Z" fill="url(#tooth)" stroke="#f9ffff" stroke-width="3" stroke-linejoin="round"/>
-<path d="M256 154 C270 168 286 176 311 175" stroke="#b5d4e6" stroke-width="11" fill="none" stroke-linecap="round" opacity=".7"/>
-<path d="M180 210 Q181 180 205 178" fill="none" stroke="#b7e7f2" stroke-width="13" stroke-linecap="round" opacity=".72"/>
-<path d="M385 320v16M377 328h16" stroke="#56dfdf" stroke-width="6" stroke-linecap="round"/>
-<!-- PWA icon source -->
+<rect width="512" height="512" rx="108" fill="url(#bg)"/>
+<circle cx="91" cy="110" r="115" fill="#2c75bb" opacity=".10"/>
+<circle cx="447" cy="457" r="115" fill="#21c6ed" opacity=".09"/>
+<!-- white tooth silhouette -->
+<path d="M256 156 C221 131 172 129 147 150 C124 170 127 219 140 263 C152 309 176 353 194 399 C201 417 221 416 228 395 C238 366 241 335 256 335 C271 335 274 366 284 395 C291 416 311 417 318 399 C336 353 360 309 372 263 C385 219 388 170 365 150 C340 129 291 131 256 156Z" fill="url(#white)"/>
+<!-- cut away inner tooth to create large navy negative space for the book -->
+<path d="M174 217 C174 182 202 175 228 189 L256 202 L284 189 C310 175 338 182 338 217 L338 282 C321 303 309 326 299 355 C291 311 276 290 256 290 C236 290 221 311 213 355 C203 326 191 303 174 282Z" fill="#0b2a61"/>
+<!-- graduation cap -->
+<path d="M134 156 L256 102 L378 156 L256 208Z" fill="#fff"/>
+<path d="M177 179 L177 205 Q256 250 335 205 L335 179 L256 219Z" fill="#ecf8ff"/>
+<path d="M370 157 L370 218" stroke="url(#aqua)" stroke-width="9" stroke-linecap="round"/>
+<rect x="360" y="212" width="20" height="35" rx="8" fill="url(#aqua)"/>
+<!-- open book, left and right page -->
+<path d="M181 233 C212 220 237 228 256 242 L256 322 C230 307 210 308 181 319Z" fill="#fff"/>
+<path d="M331 233 C300 220 275 228 256 242 L256 322 C282 307 302 308 331 319Z" fill="#f0fcff"/>
+<path d="M256 242 L256 320" stroke="#0f326c" stroke-width="5"/>
+<path d="M288 238 V279 L301 271 L314 279 V238" fill="#00d6cf"/>
+<path d="M176 329 Q213 315 256 340 Q299 315 336 329" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round"/>
+<!-- Dento signature turquoise swoosh -->
+<path d="M84 345 C145 401 311 392 421 309 C419 338 374 385 300 412 C199 452 104 417 84 378 C78 366 79 354 84 345Z" fill="url(#aqua)"/>
 </svg>
