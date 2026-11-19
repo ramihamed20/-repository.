@@ -1,7 +1,7 @@
 {
-  "name": "دليلك الدراسي | طب الأسنان",
-  "short_name": "دليلك الدراسي",
-  "description": "مستودع مواد طب الأسنان والقنوات والشيتات والشروحات والتسجيلات",
+  "name": "Dento | دينتو — مصادر طب الأسنان",
+  "short_name": "Dento",
+  "description": "دينتو: مواد وقنوات وملخصات وشيتات ومصادر طلبة طب الأسنان",
   "lang": "ar",
   "dir": "rtl",
   "id": "./",
@@ -9,7 +9,7 @@
   "scope": "./",
   "display": "standalone",
   "background_color": "#f7f9fc",
-  "theme_color": "#183960",
+  "theme_color": "#0a2354",
   "icons": [
     {
       "src": "./icons/icon-192.png",
