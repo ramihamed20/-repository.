@@ -117,10 +117,60 @@ function migrate(raw){
   raw.version=2;return raw;
 }
 function readData(){try{const raw=JSON.parse(localStorage.getItem(STORAGE));if(raw&&[1,2].includes(raw.version)){raw.subjects=Array.isArray(raw.subjects)?raw.subjects:[];raw.channels=Array.isArray(raw.channels)?raw.channels:[];raw.sheets=Array.isArray(raw.sheets)?raw.sheets:[];raw.resources=Array.isArray(raw.resources)?raw.resources:[];const upgraded=migrate(raw);if(upgraded.version===2){try{localStorage.setItem(STORAGE,JSON.stringify(upgraded))}catch(e){}}return upgraded}}catch(e){}return {version:2,subjects:[],channels:[],sheets:[],resources:[]}}
-let db=readData();let state={program:'dentistry',year:2,view:'home',subject:null,sheet:null,filter:'all',search:''};
+let db=readData();try{const saved=JSON.parse(localStorage.getItem('dental-resources-shared-cache-v1'));if(saved&&saved.version===2)db=saved}catch(_){}
+let state={program:'dentistry',year:2,view:'home',subject:null,sheet:null,filter:'all',search:''};
 function safe(t){return String(t??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]))}
 function id(){return 'id'+Date.now().toString(36)+Math.random().toString(36).slice(2,9)}
-function save(){localStorage.setItem(STORAGE,JSON.stringify(db))}
+// Keep previous local-only records untouched as an individual backup.
+const SB_URL='https://fhajvzpiaqzyefcmhrjr.supabase.co';
+const SB_KEY='sb_publishable_1Z-1e4gpnbrq0MeeP4MkxA_QWj0i6tt';
+const SB_TABLES={subject:'student_subjects',sheet:'student_sheets',channel:'student_channels',resource:'study_resources'};
+const SB_COLLECTIONS={subject:'subjects',sheet:'sheets',channel:'channels',resource:'resources'};
+let sharedOnline=false;
+let sharedLoad=null;
+function cacheShared(){try{localStorage.setItem('dental-resources-shared-cache-v1',JSON.stringify(db))}catch(_){}}
+function frontendRow(row){return {...row,desc:row.description||'',createdAt:row.created_at};}
+function rowForServer(type,item){
+ const common={id:item.id,context:item.context};
+ if(type==='channel')return {...common,name:item.name,description:item.desc||'',url:item.url,image:item.image||null};
+ if(type==='resource')return {...common,title:item.title,description:item.desc||'',type:item.type,url:item.url,subject:item.subject,sheet:item.sheet||null};
+ if(type==='subject')return {...common,name:item.name};
+ if(type==='sheet')return {...common,name:item.name,description:item.desc||'',subject:item.subject};
+ throw new Error('نوع إضافة غير معروف');
+}
+async function sharedApi(table,method='GET',payload=null){
+ const url=SB_URL+'/rest/v1/'+table+(method==='GET'?'?select=*&order=created_at.desc&limit=1000':'');
+ const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(),15000);
+ try{
+   const headers={'apikey':SB_KEY};
+   if(method==='POST'){headers['Content-Type']='application/json';headers['Prefer']='return=representation'}
+   const response=await fetch(url,{method,headers,body:payload?JSON.stringify(payload):undefined,signal:controller.signal,cache:'no-store'});
+   if(!response.ok){let detail='';try{const data=await response.json();detail=data.code==='23505'?'هذا الرابط أو الاسم مضاف من قبل':(data.message||'تعذر الوصول إلى قاعدة البيانات')}catch(_){}throw new Error(detail||'خطأ من قاعدة البيانات ('+response.status+')')}
+   return await response.json();
+ }finally{clearTimeout(deadline)}
+}
+async function persistShared(type,item){
+ const rows=await sharedApi(SB_TABLES[type],'POST',rowForServer(type,item));
+ if(!Array.isArray(rows)||!rows[0])throw new Error('لم يصل تأكيد الحفظ من قاعدة البيانات');
+ return frontendRow(rows[0]);
+}
+async function refreshShared(){
+ if(sharedLoad)return sharedLoad;
+ sharedLoad=(async()=>{
+  try{
+   const [subjects,sheets,channels,resources]=await Promise.all([
+     sharedApi('student_subjects'),sharedApi('student_sheets'),
+     sharedApi('student_channels'),sharedApi('study_resources')
+   ]);
+   db={version:2,subjects:subjects.map(frontendRow),sheets:sheets.map(frontendRow),channels:channels.map(frontendRow),resources:resources.map(frontendRow)};
+   sharedOnline=true;cacheShared();render();
+  }catch(error){
+   sharedOnline=false;console.warn('Shared resources could not be loaded:',error);
+   render();
+  }
+ })().finally(()=>{sharedLoad=null});
+ return sharedLoad;
+}
 function ctx(){return state.program+'-'+state.year}
 function subjectsForContext(context){
  let catalog=(SUBJECT_CATALOG[context]||[]).map(s=>({...s,id:subjectId(context,s.code),context}));
@@ -181,7 +231,7 @@ function empty(title,detail,action,label){return `<div class="empty"><span class
 function header(){return `<header class="topbar"><div class="top-inner"><a href="#" class="brand" data-link="home" aria-label="دليلك الدراسي - الرئيسية"><span class="brand-mark">${ico('book')}</span><span class="brand-word"><b>دليلك الدراسي</b><small>روابط ومصادر طلبة الأسنان</small></span></a><nav class="top-links" aria-label="القائمة الرئيسية"><button class="top-link ${state.view==='home'?'is-active':''}" data-nav="home">الرئيسية</button><button class="top-link ${state.view==='year'?'is-active':''}" data-nav="year">مواد الدفعة</button><button class="top-link" data-action="go-channels">قنوات الطلبة</button></nav></div></header>`}
 function hero(){return `<section class="hero"><div class="container hero-grid"><div><span class="eyebrow">مساحة واحدة لكل مصادر دفعتك</span><h1>كل اللي تحتاجه<br><em>لدراستك، هنا.</em></h1><p>قنوات الطلبة، الشيتات، الشروحات والتسجيلات. مرتّبة حسب السنة والمادة عشان توصل للمعلومة بسرعة.</p><div class="hero-tags"><span>${ico('check')} حسب السنة الدراسية</span><span>${ico('check')} روابط يضيفها الطلبة</span></div><div class="program-select">${PROGRAMS.map(x=>`<button class="chip ${state.program===x.id?'selected':''}" data-program="${x.id}">${ico(x.id==='dentistry'?'book':'stethoscope')}${x.name}</button>`).join('')}</div></div><div class="hero-visual" aria-hidden="true"><div class="visual-board"><div class="board-top"><span class="board-kicker">أقسام المستودع</span><span class="board-dot"></span></div><div class="board-item"><span class="board-item-icon">${ico('book')}</span><span><b>المواد الدراسية</b><small>كل مادة في مكانها</small></span></div><div class="board-item"><span class="board-item-icon">${ico('telegram')}</span><span><b>قنوات الطلبة</b><small>روابط دفعتك</small></span></div><div class="board-item"><span class="board-item-icon">${ico('video')}</span><span><b>الشروحات والملخصات</b><small>مرتبطة بكل شيت</small></span></div></div></div></div></section>`}
 function searchbar(){return `<div class="container search-wrap"><div class="searchbar"><span class="search-icon">${ico('search')}</span><input id="search" autocomplete="off" placeholder="ابحث عن مادة، قناة، شيت أو شرح..." value="${safe(state.search)}" aria-label="بحث في المستودع"><button class="btn btn-small btn-primary" data-action="search">بحث</button></div></div>`}
-function home(){let words=['الأولى','الثانية','الثالثة','الرابعة'];let yrs=words.map((w,i)=>{let n=i+1;let catalog=subjectsForContext('dentistry-'+n);return {n,name:w,count:catalog.length,match:matchSearch('السنة '+w,...catalog.flatMap(x=>[x.name,x.code||'',x.alias||'']))}}).filter(x=>x.match);return `${searchbar()}<main class="container main"><div class="grid years">${yrs.length?yrs.map(y=>`<button class="card year" data-year="${y.n}"><span class="year-serial">${String(y.n).padStart(2,'0')}</span><span class="year-symbol">${ico('graduation')}</span><strong>السنة ${y.name}</strong><span class="year-foot"><small>${y.count} مواد</small>${ico('right')}</span></button>`).join(''):empty('لا توجد نتائج','جرّب كلمة بحث أخرى','','')}</div><div class="footnote">${ico('info')}<span>الإضافات محفوظة على هذا الجهاز فقط حاليًا؛ مشاركتها بين الطلبة تحتاج قاعدة بيانات مشتركة.</span></div></main>`}
+function home(){let words=['الأولى','الثانية','الثالثة','الرابعة'];let yrs=words.map((w,i)=>{let n=i+1;let catalog=subjectsForContext('dentistry-'+n);return {n,name:w,count:catalog.length,match:matchSearch('السنة '+w,...catalog.flatMap(x=>[x.name,x.code||'',x.alias||'']))}}).filter(x=>x.match);return `${searchbar()}<main class="container main"><div class="grid years">${yrs.length?yrs.map(y=>`<button class="card year" data-year="${y.n}"><span class="year-serial">${String(y.n).padStart(2,'0')}</span><span class="year-symbol">${ico('graduation')}</span><strong>السنة ${y.name}</strong><span class="year-foot"><small>${y.count} مواد</small>${ico('right')}</span></button>`).join(''):empty('لا توجد نتائج','جرّب كلمة بحث أخرى','','')}</div><div class="footnote">${ico('info')}<span>الإضافات الجديدة تُحفظ في قاعدة بيانات مشتركة وتظهر لجميع الطلبة.</span></div></main>`}
 function breadcrumbs(){let xs=[`<button data-nav="home">الرئيسية</button>`];xs.push(ico('right'));xs.push(`<button data-nav="year">السنة ${['الأولى','الثانية','الثالثة','الرابعة'][state.year-1]}</button>`);if(state.view==='subject'||state.view==='sheet'){xs.push(ico('right'));xs.push(`<button data-nav="subject">${safe(getSubject()?.name||'المادة')}</button>`)}if(state.view==='sheet'){xs.push(ico('right'));xs.push('<span>'+safe(getSheet()?.name||'الشيت')+'</span>')}return `<nav class="crumbs" aria-label="مسار التصفح">${xs.join('')}</nav>`}
 function channelList(){let q=channels().filter(x=>matchSearch(x.name,x.desc));return q.length?q.map(x=>`<div class="channel" data-themeable="true"><div class="channel-body"><div class="avatar">${x.image?`<img src="${safe(x.image)}" crossorigin="anonymous" referrerpolicy="no-referrer" alt="صورة قناة ${safe(x.name)}">`:ico('telegram')}</div><div class="channel-copy"><strong>${safe(x.name)}</strong><span class="subline">${safe(x.desc||'قناة طلابية')}</span></div></div><div class="channel-actions"><a href="${safe(x.url)}" target="_blank" rel="noopener noreferrer" class="linkpill">${ico('external')} فتح القناة</a></div></div>`).join(''):empty('ما فيش قنوات مضافة','ضيف قناتك وخلّي زملاءك يوصلوا لها بسهولة','add-channel','إضافة قناة') }
 function hex(n){return n.toString(16).padStart(2,'0')}
@@ -191,13 +241,13 @@ function rgba(rgb,a){return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`}
 function readImageTheme(img){let canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});let w=Math.min(64,img.naturalWidth||img.width),h=Math.min(64,img.naturalHeight||img.height);if(!w||!h)throw new Error('empty-image');canvas.width=w;canvas.height=h;ctx.drawImage(img,0,0,w,h);let data=ctx.getImageData(0,0,w,h).data;let r=0,g=0,b=0,count=0;for(let i=0;i<data.length;i+=16){let alpha=data[i+3];if(alpha<120)continue;let rr=data[i],gg=data[i+1],bb=data[i+2];let brightness=(rr+gg+bb)/3;if(brightness>248)continue;r+=rr;g+=gg;b+=bb;count++}if(!count)throw new Error('no-sample');let base=[Math.round(r/count),Math.round(g/count),Math.round(b/count)];let accent=mixRgb(base,[36,62,120],.10);let deep=mixRgb(base,[18,29,54],.38);return {accent:rgbToHex(...accent),deep:rgbToHex(...deep),soft:rgba(base,.12),border:rgba(base,.22)}}
 function setChannelTheme(card,theme){card.style.setProperty('--channel-accent',theme.accent);card.style.setProperty('--channel-deep',theme.deep);card.style.setProperty('--channel-soft',theme.soft);card.style.setProperty('--channel-border',theme.border)}
 function applyChannelThemes(scope=document){scope.querySelectorAll('.channel[data-themeable="true"]').forEach(card=>{let img=card.querySelector('img');if(!img)return;let apply=()=>{try{setChannelTheme(card,readImageTheme(img))}catch(_){}};if(img.complete&&img.naturalWidth)apply();else{img.addEventListener('load',apply,{once:true})}})}
-function yearView(){let ss=subjects().filter(x=>matchSearch(x.name,x.code||'',x.alias||''));return `${searchbar()}<main class="container main">${breadcrumbs()}<div class="section-intro"><div class="intro-flex"><span class="intro-icon">${ico('graduation')}</span><div><h1 class="info-title">السنة ${['الأولى','الثانية','الثالثة','الرابعة'][state.year-1]}</h1><p>مواد طب الأسنان وقنوات طلبة دفعتك</p></div></div></div><div class="layout"><div class="main-col" id="materials">${heading('المواد الدراسية',ss.length+' مادة في هذه القائمة')}<div class="grid subjects">${ss.length?ss.map((s,i)=>`<button class="card subject" data-subject="${safe(s.id)}"><span class="subject-icon">${ico(['book','layers','folder','file'][i%4])}</span><span style="flex:1;min-width:0"><strong>${safe(s.name)}</strong><span class="subline">${safe(s.code||'مادة مضافة')} · 10 شيتات</span></span><span class="arrow">${ico('right')}</span></button>`).join(''):empty('ما فيش مواد مطابقة','جرّب اسم المادة أو رمزها','','')}</div></div><aside class="side" id="channels">${heading('قنوات الطلبة','قنوات زملائك في السنة نفسها','add-channel','+ أضف قناتك')}${channelList()}</aside></div><div class="footnote">${ico('info')}<span>الإضافات تظهر على جهازك فقط حاليًا. حتى يشوفها كل الطلبة نحتاج ربط قاعدة بيانات.</span></div></main>`}
+function yearView(){let ss=subjects().filter(x=>matchSearch(x.name,x.code||'',x.alias||''));return `${searchbar()}<main class="container main">${breadcrumbs()}<div class="section-intro"><div class="intro-flex"><span class="intro-icon">${ico('graduation')}</span><div><h1 class="info-title">السنة ${['الأولى','الثانية','الثالثة','الرابعة'][state.year-1]}</h1><p>مواد طب الأسنان وقنوات طلبة دفعتك</p></div></div></div><div class="layout"><div class="main-col" id="materials">${heading('المواد الدراسية',ss.length+' مادة في هذه القائمة')}<div class="grid subjects">${ss.length?ss.map((s,i)=>`<button class="card subject" data-subject="${safe(s.id)}"><span class="subject-icon">${ico(['book','layers','folder','file'][i%4])}</span><span style="flex:1;min-width:0"><strong>${safe(s.name)}</strong><span class="subline">${safe(s.code||'مادة مضافة')} · 10 شيتات</span></span><span class="arrow">${ico('right')}</span></button>`).join(''):empty('ما فيش مواد مطابقة','جرّب اسم المادة أو رمزها','','')}</div></div><aside class="side" id="channels">${heading('قنوات الطلبة','قنوات زملائك في السنة نفسها','add-channel','+ أضف قناتك')}${channelList()}</aside></div><div class="footnote">${ico('info')}<span>الإضافات المنشورة تظهر لجميع طلبة الدفعة بعد حفظها.</span></div></main>`}
 function filterTabs(){return `<div class="type-tabs resource-tabs" role="group" aria-label="تصفية الإضافات">${TYPE_FILTERS.map(([t,label])=>`<button class="chip ${state.filter===t?'selected':''}" data-filter="${t}" aria-pressed="${state.filter===t}">${label}</button>`).join('')}</div>`}
 function selectedResources(list){return list.filter(x=>(state.filter==='all'||x.type===state.filter)&&matchSearch(x.title,x.desc,x.type,types[x.type]||''))}
 function resourceCard(r){let iconName=icons[r.type]||'link';let sh=r.sheet?sheetSlots(r.subject).find(x=>x.id===r.sheet):null;return `<article class="card resource resource-row"><div class="res-icon">${ico(iconName)}</div><div class="res-body"><div class="resource-tags"><span class="res-meta">${safe(types[r.type]||'رابط')}</span></div><strong>${safe(r.title)}</strong><p>${safe(r.desc||'لا يوجد وصف لهذا الرابط.')}</p></div><a class="btn btn-ghost btn-small resource-open" target="_blank" rel="noopener noreferrer" href="${safe(r.url)}">فتح الرابط ${ico('external')}</a></article>`}
 function subjectView(){let sub=getSubject();if(!sub){state.view='year';return yearView()}let sl=sheets(),all=selectedResources(resources());let matchedSheets=sl.filter(sh=>matchSearch(sh.name,sh.desc));return `${searchbar()}<main class="container main">${breadcrumbs()}<div class="section-intro"><div class="intro-flex"><span class="intro-icon">${ico('book')}</span><div><h1 class="info-title">${safe(sub.name)}</h1><p>${safe(sub.code||'مادة دراسية')} · السنة ${['الأولى','الثانية','الثالثة','الرابعة'][state.year-1]}</p></div></div></div><div class="section"><div class="info-strip"><span class="info-strip-icon">${ico('layers')}</span><div><strong>إضافات المادة</strong><small>شيت، ملخص، قناة شرح، أسئلة، تسجيل صوتي أو أي رابط مفيد</small></div><span class="count-pill">${resources().length} إضافة</span></div>${filterTabs()}${all.length?all.map(resourceCard).join(''):empty('ما فيش إضافات في هذا القسم','أضف أول رابط مع عنوان ووصف لهذه المادة','add-resource','إضافة رابط')}</div><div class="section" id="sheets">${heading('شيتات المادة','10 شيتات جاهزة للتنظيم، اضغط على أي شيت لمشاهدة إضافاته')}<div class="grid sheets">${matchedSheets.map((sh,i)=>{let n=allResources().filter(x=>x.sheet===sh.id).length;return `<button class="card sheet" data-sheet="${safe(sh.id)}"><span class="sheet-icon">${ico('file')}</span><span style="flex:1;min-width:0"><strong>${safe(sh.name)}</strong><span class="subline">${n} إضافة · ملخصات وشروحات وأسئلة</span></span><span class="arrow">${ico('right')}</span></button>`}).join('')}</div></div></main>`}
 function sheetView(){let sh=getSheet();if(!sh){state.view='subject';return subjectView()}let all=selectedResources(resources(sh.id));let sub=getSubject();return `${searchbar()}<main class="container main">${breadcrumbs()}<div class="section-intro"><div class="intro-flex"><span class="intro-icon">${ico('file')}</span><div><h1 class="info-title">${safe(sh.name)}</h1><p>${safe(sub?.name||'المادة')} · المصادر الخاصة بهذا الشيت</p></div></div>${btn(ico('plus')+' إضافة رابط','add-resource','btn btn-primary btn-small')}</div><div class="section">${heading('إضافات الشيت','ملخصات، شروحات، أسئلة وتسجيلات مرتبطة بهذا الشيت')}${filterTabs()}${all.length?all.map(resourceCard).join(''):empty('لا توجد إضافات لهذا الشيت','أضف رابط تيليجرام مع اسم يوضح المحتوى وشرح مختصر','add-resource','إضافة رابط')}</div></main>`}
-function render(){let content=state.view==='home'?home():state.view==='year'?yearView():state.view==='subject'?subjectView():sheetView();app.innerHTML=header()+content+`<footer class="foot">دليلك الدراسي · مواد وقنوات ومصادر طلبة الأسنان</footer>`;applyChannelThemes(app);document.querySelector('#search')?.addEventListener('input',e=>{const v=e.target.value;state.search=v;const selected=document.activeElement;const position=selected.selectionStart;render();const el=document.querySelector('#search');if(el){el.focus();el.setSelectionRange(position,position)}})}
+function render(){let content=state.view==='home'?home():state.view==='year'?yearView():state.view==='subject'?subjectView():sheetView();app.innerHTML=header()+content+`<footer class="foot">دليلك الدراسي · ${sharedOnline?'إضافات مشتركة بين الطلبة':'عرض آخر بيانات محفوظة · تحتاج اتصالًا للتحديث والنشر'}</footer>`;applyChannelThemes(app);document.querySelector('#search')?.addEventListener('input',e=>{const v=e.target.value;state.search=v;const selected=document.activeElement;const position=selected.selectionStart;render();const el=document.querySelector('#search');if(el){el.focus();el.setSelectionRange(position,position)}})}
 function openModal(type){let names={channel:'إضافة قناة طالب',subject:'إضافة مادة',sheet:'إضافة شيت',resource:'إضافة رابط أو مصدر'};let title=names[type];let content='';let simple=(name,label,placeholder='',required=true)=>`<div class="field"><label for="f-${name}">${label}</label><input id="f-${name}" name="${name}" placeholder="${safe(placeholder)}" ${required?'required':''} maxlength="180"></div>`;
 if(type==='channel')content=simple('name','اسم القناة','مثال: قناة دفعة السنة الثانية')+simple('url','رابط القناة','https://t.me/...')+`<div class="field"><label for="f-desc">وصف مختصر للقناة</label><textarea name="desc" id="f-desc" maxlength="500" placeholder="مثال: ملخصات المحاضرات والإعلانات المهمة"></textarea></div><div class="field"><label for="f-image">صورة القناة (اختياري)</label><input type="file" name="image" id="f-image" accept="image/png,image/jpeg,image/webp"><span class="hint">JPG أو PNG أو WebP وبحجم أقل من 1 ميغابايت.</span><img class="image-preview" id="preview" alt="معاينة الصورة"></div>`;
 if(type==='subject')content=simple('name','اسم المادة','مثال: علم وظائف الأعضاء');
@@ -214,17 +264,61 @@ document.querySelector('#addForm').addEventListener('submit',e=>submit(e,type))}
 function toDataURL(file){return new Promise((res,rej)=>{let fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(file)})}
 function closeModal(){document.querySelector('#overlay').innerHTML=''}
 function validUrl(value){try{let url=new URL(value);return ['http:','https:'].includes(url.protocol)?url.toString():null}catch{return null}}
-async function submit(e,type){e.preventDefault();const form=e.currentTarget;const d=new FormData(form);const str=k=>String(d.get(k)||'').trim();const err=document.querySelector('#formError');err.textContent='';let obj={id:id(),context:ctx(),createdAt:new Date().toISOString()};let name=str('name');
-if(type==='channel'||type==='resource'){let url=validUrl(str('url'));if(!url){err.textContent='ضع رابطًا صحيحًا يبدأ بـ https:// أو http://';return}obj.url=url}
-if(type==='channel'){obj.name=name;obj.desc=str('desc');let file=d.get('image');if(file instanceof File&&file.size){if(file.size>1024*1024||!['image/jpeg','image/png','image/webp'].includes(file.type)){err.textContent='اختر صورة JPG أو PNG أو WebP أصغر من 1 ميغابايت';return}obj.image=await toDataURL(file)}db.channels.push(obj)}
-if(type==='subject'){if(subjects().some(s=>s.name.toLocaleLowerCase('ar')===name.toLocaleLowerCase('ar'))){err.textContent='هذه المادة موجودة بالفعل';return}obj.name=name;db.subjects.push(obj)}
-if(type==='sheet'){if(sheets().filter(x=>!x.id.startsWith('slot-')).length>=10){err.textContent='الحد الحالي 10 شيتات لكل مادة';return}obj.name=name;obj.desc=str('desc');obj.subject=state.subject;db.sheets.push(obj)}
-if(type==='resource'){obj.title=str('title');obj.desc=str('desc');obj.type=str('type');obj.subject=state.subject;obj.sheet=state.view==='sheet'?state.sheet:null;if(!obj.subject||!subjects().some(s=>s.id===obj.subject)){err.textContent='اختر مادة صحيحة';return}if(obj.sheet&&!sheetSlots(obj.subject).some(sh=>sh.id===obj.sheet)){err.textContent='الشيت غير صالح';return}db.resources.push(obj)}
-try{save()}catch(ex){err.textContent='تعذر الحفظ؛ ربما امتلأت مساحة التخزين على الجهاز. جرّب صورة أصغر.';return}closeModal();toast('تم الحفظ على جهازك ✓');render()}
+async function submit(e,type){
+e.preventDefault();
+const form=e.currentTarget;
+const d=new FormData(form);
+const str=k=>String(d.get(k)||'').trim();
+const err=document.querySelector('#formError');
+err.textContent='';
+const obj={id:id(),context:ctx(),createdAt:new Date().toISOString()};
+const name=str('name');
+const submitButton=form.querySelector('button[type="submit"]');
+if(type==='channel'||type==='resource'){
+  const url=validUrl(str('url'));
+  if(!url){err.textContent='ضع رابطًا صحيحًا يبدأ بـ https:// أو http://';return}
+  obj.url=url;
+}
+if(type==='channel'){
+  obj.name=name;obj.desc=str('desc');
+  const file=d.get('image');
+  if(file instanceof File&&file.size){
+    if(file.size>1024*1024||!['image/jpeg','image/png','image/webp'].includes(file.type)){err.textContent='اختر صورة JPG أو PNG أو WebP أصغر من 1 ميغابايت';return}
+    obj.image=await toDataURL(file);
+  }
+}
+if(type==='subject'){
+  if(subjects().some(s=>s.name.toLocaleLowerCase('ar')===name.toLocaleLowerCase('ar'))){err.textContent='هذه المادة موجودة بالفعل';return}
+  obj.name=name;
+}
+if(type==='sheet'){
+  if(sheets().filter(x=>!x.id.startsWith('slot-')).length>=10){err.textContent='الحد الحالي 10 شيتات لكل مادة';return}
+  obj.name=name;obj.desc=str('desc');obj.subject=state.subject;
+}
+if(type==='resource'){
+  obj.title=str('title');obj.desc=str('desc');obj.type=str('type');obj.subject=state.subject;
+  obj.sheet=state.view==='sheet'?state.sheet:null;
+  if(!obj.subject||!subjects().some(s=>s.id===obj.subject)){err.textContent='اختر مادة صحيحة';return}
+  if(obj.sheet&&!sheetSlots(obj.subject).some(sh=>sh.id===obj.sheet)){err.textContent='الشيت غير صالح';return}
+}
+if(submitButton){submitButton.disabled=true;submitButton.textContent='جارٍ النشر...'}
+try{
+  const row=await persistShared(type,obj);
+  db[SB_COLLECTIONS[type]].unshift(row);
+  cacheShared();
+  closeModal();
+  toast('تم نشر الإضافة لجميع الطلبة ✓');
+  render();
+}catch(error){
+  if(document.querySelector('#formError'))document.querySelector('#formError').textContent='تعذر نشر الإضافة: '+(error.message||'تحقق من الاتصال');
+}finally{
+  if(submitButton){submitButton.disabled=false;submitButton.textContent='حفظ الإضافة'}
+}
+}
 function toast(msg){const el=document.querySelector('#toasts');el.innerHTML=`<div class="toast">${safe(msg)}</div>`;setTimeout(()=>{if(el)el.innerHTML=''},2700)}
 function nav(view){state.view=view;state.search='';state.filter='all';if(view==='home'){state.subject=null;state.sheet=null}if(view==='year'){state.subject=null;state.sheet=null}if(view==='subject'){state.sheet=null}render();scrollTo({top:0,behavior:'instant'})}
 document.addEventListener('click',e=>{const target=e.target.closest('[data-action],[data-program],[data-year],[data-subject],[data-sheet],[data-filter],[data-nav],[data-link]');if(!target)return;let ds=target.dataset;if(ds.link==='home'){e.preventDefault();nav('home')}if(ds.program){state.program=ds.program;state.year=2;nav('home')}if(ds.year){state.year=Number(ds.year);nav('year')}if(ds.subject){state.subject=ds.subject;nav('subject')}if(ds.sheet){state.sheet=ds.sheet;nav('sheet')}if(ds.filter){state.filter=ds.filter;render()}if(ds.nav)nav(ds.nav);if(ds.action==='close')closeModal();if(ds.action==='add-channel')openModal('channel');if(ds.action==='add-subject')openModal('subject');if(ds.action==='add-sheet')openModal('sheet');if(ds.action==='add-resource')openModal('resource');if(ds.action==='add-any'){if(state.view==='home'){toast('اختر السنة أولًا لإضافة قناة أو مصدر');return}openModal(state.view==='year'?'channel':'resource')}if(ds.action==='search'){document.querySelector('#search')?.focus()}if(ds.action==='go-channels'){if(state.view==='home'){state.view='year';state.search='';state.filter='all';render()}else if(state.view!=='year'){state.view='year';state.search='';state.filter='all';render()}document.querySelector('#channels')?.scrollIntoView({behavior:'smooth',block:'start'})}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});render();
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});render();refreshShared();setInterval(()=>{if(document.visibilityState==='visible')refreshShared()},60000);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refreshShared()});
 })();
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js',{scope:'./'}).catch(err=>console.warn('Offline cache:',err));});}</script>
